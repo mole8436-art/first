@@ -73,9 +73,7 @@ function App() {
   };
 
   const handleFileUpload = async (id: string, file: File) => {
-    const allowedTypes = ['text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
-    
-    if (!allowedTypes.includes(file.type) && !file.name.endsWith('.txt') && !file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
+    if (!file.name.endsWith('.txt') && !file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
       setErrorMsg("txt 또는 docx 파일만 업로드 가능합니다.");
       return;
     }
@@ -83,19 +81,40 @@ function App() {
     try {
       let content = '';
       
-      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-        content = await file.text();
-      } else {
-        // For docx files, we'll just read as text for now (simplified)
-        // In production, you'd want to use a library like mammoth.js
+      if (file.name.endsWith('.txt')) {
+        // Read text file with proper encoding support
         const reader = new FileReader();
-        content = await new Promise<string>((resolve) => {
+        content = await new Promise<string>((resolve, reject) => {
           reader.onload = (e) => {
             const text = e.target?.result as string;
             resolve(text || '');
           };
-          reader.readAsText(file);
+          reader.onerror = () => reject(new Error('파일 읽기 실패'));
+          // Use UTF-8 encoding for proper Korean character support
+          reader.readAsText(file, 'UTF-8');
         });
+      } else if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+        // For docx files, read as binary and extract text
+        // Note: This is a simplified version - only extracts plain text
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const decoder = new TextDecoder('utf-8');
+        
+        // Try to extract readable text from the binary
+        // This is a basic approach - for production use mammoth.js or similar
+        let rawText = decoder.decode(uint8Array);
+        
+        // Filter out non-printable characters and keep Korean, English, numbers, and common punctuation
+        content = rawText
+          .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove control characters
+          .replace(/[^\p{L}\p{N}\p{P}\p{Z}\s]/gu, '') // Keep letters, numbers, punctuation, separators
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim();
+        
+        if (!content || content.length < 10) {
+          setErrorMsg("docx 파일의 내용을 읽을 수 없습니다. txt 파일로 변환하여 업로드해주세요.");
+          return;
+        }
       }
 
       setScripts(scripts.map(s => 
@@ -103,9 +122,10 @@ function App() {
           ? { ...s, content, source: 'file', fileName: file.name }
           : s
       ));
+      setErrorMsg(null);
     } catch (error) {
       console.error('File read error:', error);
-      setErrorMsg("파일을 읽는 중 오류가 발생했습니다.");
+      setErrorMsg("파일을 읽는 중 오류가 발생했습니다. UTF-8 인코딩으로 저장된 txt 파일을 사용해주세요.");
     }
   };
 
