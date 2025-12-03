@@ -12,16 +12,37 @@ function App() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState<'structure' | 'timeline'>('structure');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState<string>('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
+  const [rememberKey, setRememberKey] = useState<boolean>(true);
 
-  // Check for API key on mount
+  // Load API key from localStorage on mount
   useEffect(() => {
-    if (!process.env.API_KEY) {
-      setErrorMsg("API Key가 설정되지 않았습니다. 환경 변수를 확인해주세요.");
-      setStatus(AnalysisStatus.ERROR);
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setApiKey(savedKey);
+      setRememberKey(true);
+    } else {
+      setShowApiKeyInput(true);
     }
   }, []);
 
+  // Save API key to localStorage when remember is checked
+  useEffect(() => {
+    if (rememberKey && apiKey) {
+      localStorage.setItem('gemini_api_key', apiKey);
+    } else if (!rememberKey) {
+      localStorage.removeItem('gemini_api_key');
+    }
+  }, [apiKey, rememberKey]);
+
   const handleAnalyze = async () => {
+    if (!apiKey.trim()) {
+      setShowApiKeyInput(true);
+      setErrorMsg("API 키를 먼저 입력해주세요.");
+      return;
+    }
+    
     if (!inputScript.trim()) return;
     if (inputScript.length < 50) {
         setErrorMsg("대본이 너무 짧습니다. 더 자세한 내용을 입력해주세요.");
@@ -33,13 +54,14 @@ function App() {
     setResult(null);
 
     try {
-      const data = await analyzeTranscript(inputScript);
+      const data = await analyzeTranscript(inputScript, apiKey);
       setResult(data);
       setStatus(AnalysisStatus.SUCCESS);
     } catch (error) {
       console.error(error);
       setStatus(AnalysisStatus.ERROR);
-      setErrorMsg("분석 중 오류가 발생했습니다. 다시 시도하거나 대본을 확인해주세요.");
+      const errorMessage = error instanceof Error ? error.message : "분석 중 오류가 발생했습니다.";
+      setErrorMsg(errorMessage.includes('API') ? "API 키가 올바르지 않습니다. 다시 확인해주세요." : "분석 중 오류가 발생했습니다. 다시 시도해주세요.");
     }
   };
 
@@ -62,13 +84,71 @@ function App() {
               Viral Script Architect
             </h1>
           </div>
-          <div className="text-xs font-medium px-2 py-1 bg-brand-900/30 text-brand-300 border border-brand-800 rounded">
-             BETA
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+              className="text-xs font-medium px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+              title="API 키 설정"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              {apiKey ? 'API 키 변경' : 'API 키 설정'}
+            </button>
+            <div className="text-xs font-medium px-2 py-1 bg-brand-900/30 text-brand-300 border border-brand-800 rounded">
+              BETA
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* API Key Input Section */}
+        {showApiKeyInput && (
+          <div className="mb-6 bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="bg-brand-600/20 p-2 rounded-lg">
+                <svg className="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-slate-200 mb-1">Gemini API 키 설정</h3>
+                <p className="text-sm text-slate-400 mb-4">
+                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 underline">
+                    Google AI Studio
+                  </a>에서 무료 API 키를 발급받을 수 있습니다.
+                </p>
+                <div className="flex gap-3">
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="AIza...로 시작하는 API 키를 입력하세요"
+                    className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                  />
+                  <button
+                    onClick={() => setShowApiKeyInput(false)}
+                    disabled={!apiKey.trim()}
+                    className="px-6 py-2.5 bg-brand-600 hover:bg-brand-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg font-medium text-sm transition-colors"
+                  >
+                    저장
+                  </button>
+                </div>
+                <label className="flex items-center gap-2 mt-3 text-sm text-slate-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberKey}
+                    onChange={(e) => setRememberKey(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-brand-600 focus:ring-2 focus:ring-brand-500"
+                  />
+                  브라우저에 API 키 기억하기 (로컬에만 저장됩니다)
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
           
           {/* Left Column: Input */}

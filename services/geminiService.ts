@@ -1,14 +1,6 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult } from "../types";
 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-if (!apiKey) {
-  throw new Error('GEMINI_API_KEY is not set in .env.local');
-}
-
-const ai = new GoogleGenAI({ apiKey });
-
 const responseSchema: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -67,7 +59,13 @@ const responseSchema: Schema = {
   required: ["timeline", "hooks", "scriptStructure", "viralScore", "tips"],
 };
 
-export const analyzeTranscript = async (transcript: string): Promise<AnalysisResult> => {
+export const analyzeTranscript = async (transcript: string, apiKey: string): Promise<AnalysisResult> => {
+  if (!apiKey) {
+    throw new Error('API 키가 필요합니다.');
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
