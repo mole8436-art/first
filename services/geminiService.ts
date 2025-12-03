@@ -1,7 +1,13 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AnalysisResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+if (!apiKey) {
+  throw new Error('GEMINI_API_KEY is not set in .env.local');
+}
+
+const ai = new GoogleGenAI({ apiKey });
 
 const responseSchema: Schema = {
   type: Type.OBJECT,
