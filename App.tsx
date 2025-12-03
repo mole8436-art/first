@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { analyzeTranscript } from './services/geminiService';
-import { AnalysisResult, AnalysisStatus } from './types';
+import { AnalysisResult, AnalysisStatus, ScriptInput } from './types';
 import TimelineView from './components/TimelineView';
 import StructureView from './components/StructureView';
 import HookView from './components/HookView';
 import { SparklesIcon, ZapIcon, AlertCircleIcon } from './components/Icons';
 
 function App() {
-  const [inputScript, setInputScript] = useState('');
+  const [scripts, setScripts] = useState<ScriptInput[]>([
+    { id: '1', title: '대본 1', content: '', source: 'text' }
+  ]);
+  const [activeScriptId, setActiveScriptId] = useState<string>('1');
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState<'structure' | 'timeline'>('structure');
@@ -36,17 +39,93 @@ function App() {
     }
   }, [apiKey, rememberKey]);
 
+  const addScript = () => {
+    if (scripts.length >= 5) {
+      setErrorMsg("최대 5개의 대본까지만 추가할 수 있습니다.");
+      return;
+    }
+    const newId = String(scripts.length + 1);
+    const newScript: ScriptInput = {
+      id: newId,
+      title: `대본 ${newId}`,
+      content: '',
+      source: 'text'
+    };
+    setScripts([...scripts, newScript]);
+    setActiveScriptId(newId);
+  };
+
+  const removeScript = (id: string) => {
+    if (scripts.length === 1) return;
+    const filtered = scripts.filter(s => s.id !== id);
+    setScripts(filtered);
+    if (activeScriptId === id) {
+      setActiveScriptId(filtered[0].id);
+    }
+  };
+
+  const updateScriptContent = (id: string, content: string) => {
+    setScripts(scripts.map(s => s.id === id ? { ...s, content } : s));
+  };
+
+  const updateScriptTitle = (id: string, title: string) => {
+    setScripts(scripts.map(s => s.id === id ? { ...s, title } : s));
+  };
+
+  const handleFileUpload = async (id: string, file: File) => {
+    const allowedTypes = ['text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
+    
+    if (!allowedTypes.includes(file.type) && !file.name.endsWith('.txt') && !file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
+      setErrorMsg("txt 또는 docx 파일만 업로드 가능합니다.");
+      return;
+    }
+
+    try {
+      let content = '';
+      
+      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        content = await file.text();
+      } else {
+        // For docx files, we'll just read as text for now (simplified)
+        // In production, you'd want to use a library like mammoth.js
+        const reader = new FileReader();
+        content = await new Promise<string>((resolve) => {
+          reader.onload = (e) => {
+            const text = e.target?.result as string;
+            resolve(text || '');
+          };
+          reader.readAsText(file);
+        });
+      }
+
+      setScripts(scripts.map(s => 
+        s.id === id 
+          ? { ...s, content, source: 'file', fileName: file.name }
+          : s
+      ));
+    } catch (error) {
+      console.error('File read error:', error);
+      setErrorMsg("파일을 읽는 중 오류가 발생했습니다.");
+    }
+  };
+
   const handleAnalyze = async () => {
     if (!apiKey.trim()) {
       setShowApiKeyInput(true);
       setErrorMsg("API 키를 먼저 입력해주세요.");
       return;
     }
-    
-    if (!inputScript.trim()) return;
-    if (inputScript.length < 50) {
-        setErrorMsg("대본이 너무 짧습니다. 더 자세한 내용을 입력해주세요.");
-        return;
+
+    const filledScripts = scripts.filter(s => s.content.trim());
+    if (filledScripts.length === 0) {
+      setErrorMsg("최소 1개 이상의 대본을 입력해주세요.");
+      return;
+    }
+
+    const totalLength = filledScripts.reduce((sum, s) => sum + s.content.length, 0);
+    if (totalLength < 50) {
+      setErrorMsg("대본이 너무 짧습니다. 더 자세한 내용을 입력해주세요.");
+      return;
     }
 
     setStatus(AnalysisStatus.ANALYZING);
@@ -54,7 +133,12 @@ function App() {
     setResult(null);
 
     try {
-      const data = await analyzeTranscript(inputScript, apiKey);
+      // Combine all scripts with context
+      const combinedScript = filledScripts.map((s, idx) => 
+        `[자료 ${idx + 1}: ${s.title}]\n${s.content}`
+      ).join('\n\n---\n\n');
+
+      const data = await analyzeTranscript(combinedScript, apiKey);
       setResult(data);
       setStatus(AnalysisStatus.SUCCESS);
     } catch (error) {
@@ -70,6 +154,8 @@ function App() {
     if (score >= 70) return 'text-yellow-400';
     return 'text-red-400';
   };
+
+  const activeScript = scripts.find(s => s.id === activeScriptId) || scripts[0];
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 font-sans selection:bg-brand-500/30 selection:text-brand-100">
@@ -153,12 +239,82 @@ function App() {
           
           {/* Left Column: Input */}
           <div className="lg:col-span-5 flex flex-col gap-4">
+            {/* Script Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              {scripts.map(script => (
+                <div key={script.id} className="flex items-center gap-1">
+                  <button
+                    onClick={() => setActiveScriptId(script.id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                      activeScriptId === script.id
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                    }`}
+                  >
+                    {script.fileName || script.title}
+                    {script.content && <span className="ml-1 text-xs">●</span>}
+                  </button>
+                  {scripts.length > 1 && (
+                    <button
+                      onClick={() => removeScript(script.id)}
+                      className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                      title="삭제"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              ))}
+              {scripts.length < 5 && (
+                <button
+                  onClick={addScript}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-800 text-slate-400 hover:bg-slate-700 transition-colors flex items-center gap-1"
+                  title="대본 추가"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  추가
+                </button>
+              )}
+            </div>
+
+            {/* Script Title & File Upload */}
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={activeScript.title}
+                onChange={(e) => updateScriptTitle(activeScript.id, e.target.value)}
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="대본 제목"
+              />
+              <label className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-medium text-slate-300 cursor-pointer transition-colors flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                파일
+                <input
+                  type="file"
+                  accept=".txt,.docx,.doc"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileUpload(activeScript.id, file);
+                    e.target.value = '';
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {/* Script Content */}
             <div className="bg-slate-800/50 rounded-2xl border border-slate-700 p-1 shadow-inner">
               <textarea
-                value={inputScript}
-                onChange={(e) => setInputScript(e.target.value)}
-                placeholder="여기에 사건 관련 대본이나 기사 내용을 붙여넣으세요...&#13;&#10;(최소 200자 이상 권장)"
-                className="w-full h-[500px] lg:h-[calc(100vh-12rem)] bg-transparent text-slate-200 placeholder-slate-500 p-4 resize-none focus:outline-none text-base leading-relaxed scrollbar-thin"
+                value={activeScript.content}
+                onChange={(e) => updateScriptContent(activeScript.id, e.target.value)}
+                placeholder="대본, 기사, 또는 관련 자료를 입력하세요...&#13;&#10;여러 자료를 추가하면 AI가 팩트만 추출하여 분석합니다."
+                className="w-full h-[400px] lg:h-[calc(100vh-24rem)] bg-transparent text-slate-200 placeholder-slate-500 p-4 resize-none focus:outline-none text-base leading-relaxed scrollbar-thin"
               />
             </div>
             
@@ -171,7 +327,7 @@ function App() {
 
             <button
               onClick={handleAnalyze}
-              disabled={status === AnalysisStatus.ANALYZING || !inputScript.trim()}
+              disabled={status === AnalysisStatus.ANALYZING}
               className={`
                 w-full py-4 rounded-xl font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.01]
                 ${status === AnalysisStatus.ANALYZING 
@@ -185,18 +341,20 @@ function App() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  분석 및 구조화 중...
+                  팩트 추출 및 분석 중...
                 </>
               ) : (
                 <>
                   <SparklesIcon className="w-5 h-5" />
-                  대본 분석 및 떡상 구조 생성
+                  {scripts.filter(s => s.content).length > 1 ? '팩트 추출 & 떡상 구조 생성' : '대본 분석 및 떡상 구조 생성'}
                 </>
               )}
             </button>
             
             <p className="text-center text-slate-500 text-xs">
-              Gemini 2.5 AI가 문맥을 파악하여 최적의 타임라인과 후킹을 제안합니다.
+              {scripts.filter(s => s.content).length > 1 
+                ? `${scripts.filter(s => s.content).length}개의 자료에서 핵심 팩트를 추출하여 최적의 구조를 제안합니다.`
+                : 'Gemini 2.5 AI가 문맥을 파악하여 최적의 타임라인과 후킹을 제안합니다.'}
             </p>
           </div>
 
@@ -265,12 +423,15 @@ function App() {
                   왼쪽에 대본을 입력하고 버튼을 누르면,<br/>
                   AI가 떡상 가능한 구조와 후킹 멘트를 제안해드립니다.
                 </p>
-                <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-md">
+                <div className="mt-8 grid grid-cols-3 gap-4 w-full max-w-md">
                     <div className="bg-slate-800/50 p-3 rounded text-xs text-slate-400">
                         ✨ <b>Hook</b><br/>첫 5초 이탈 방지
                     </div>
                     <div className="bg-slate-800/50 p-3 rounded text-xs text-slate-400">
                         ⏳ <b>Timeline</b><br/>복잡한 사건 정리
+                    </div>
+                    <div className="bg-slate-800/50 p-3 rounded text-xs text-slate-400">
+                        📄 <b>다중 자료</b><br/>팩트만 추출
                     </div>
                 </div>
               </div>

@@ -23,3 +23,11 @@ export enum AnalysisStatus {
   SUCCESS = 'SUCCESS',
   ERROR = 'ERROR',
 }
+
+export interface ScriptInput {
+  id: string;
+  title: string;
+  content: string;
+  source: 'text' | 'file';
+  fileName?: string;
+}
