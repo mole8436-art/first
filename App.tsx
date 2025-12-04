@@ -4,6 +4,7 @@ import { AnalysisResult, AnalysisStatus, ScriptInput } from './types';
 import TimelineView from './components/TimelineView';
 import StructureView from './components/StructureView';
 import HookView from './components/HookView';
+import CharacterView from './components/CharacterView';
 import { SparklesIcon, ZapIcon, AlertCircleIcon } from './components/Icons';
 
 function App() {
@@ -13,7 +14,7 @@ function App() {
   const [activeScriptId, setActiveScriptId] = useState<string>('1');
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [activeTab, setActiveTab] = useState<'structure' | 'timeline'>('structure');
+  const [activeTab, setActiveTab] = useState<'structure' | 'timeline' | 'characters'>('structure');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>('');
   const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
@@ -408,6 +409,12 @@ function App() {
                         >
                             사건 타임라인
                         </button>
+                        <button 
+                            onClick={() => setActiveTab('characters')}
+                            className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors ${activeTab === 'characters' ? 'bg-brand-900/20 text-brand-400 border-b-2 border-brand-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
+                        >
+                            주요 인물
+                        </button>
                     </div>
 
                     <div className="p-6 overflow-y-auto max-h-[calc(100vh-20rem)] scrollbar-thin scrollbar-thumb-slate-700">
@@ -418,8 +425,10 @@ function App() {
                                     <StructureView structure={result.scriptStructure} />
                                 </div>
                             </div>
-                        ) : (
+                        ) : activeTab === 'timeline' ? (
                             <TimelineView events={result.timeline} />
+                        ) : (
+                            <CharacterView characters={result.characters} />
                         )}
                     </div>
                 </div>

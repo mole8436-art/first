@@ -9,10 +9,19 @@ export interface ScriptSection {
   psychologicalTrigger: string; // Why this works (e.g., "Create curiosity")
 }
 
+export interface Character {
+  name: string;
+  age?: string;
+  location?: string;
+  occupation?: string;
+  description?: string;
+}
+
 export interface AnalysisResult {
   timeline: TimelineEvent[];
   hooks: string[];
   scriptStructure: ScriptSection[];
+  characters: Character[];
   viralScore: number; // 0-100 score estimation
   tips: string[];
 }
