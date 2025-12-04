@@ -17,6 +17,25 @@ export interface Character {
   description?: string;
 }
 
+export interface ScriptAnalysis {
+  summary: string;
+  timeline: TimelineEvent[];
+  recommendedHooks: string[];
+}
+
+export interface GeneratedScript {
+  intro: string;
+  background: string;
+  incident: string;
+  climax: string;
+  outro: string;
+}
+
+export interface FullScriptResult {
+  analysis: ScriptAnalysis;
+  script: GeneratedScript;
+}
+
 export interface AnalysisResult {
   timeline: TimelineEvent[];
   hooks: string[];

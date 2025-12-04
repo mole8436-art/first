@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { analyzeTranscript } from './services/geminiService';
-import { AnalysisResult, AnalysisStatus, ScriptInput } from './types';
+import { analyzeTranscript, generateFullScript } from './services/geminiService';
+import { AnalysisResult, AnalysisStatus, ScriptInput, FullScriptResult } from './types';
 import TimelineView from './components/TimelineView';
 import StructureView from './components/StructureView';
 import HookView from './components/HookView';
 import CharacterView from './components/CharacterView';
+import ScriptView from './components/ScriptView';
 import { SparklesIcon, ZapIcon, AlertCircleIcon } from './components/Icons';
 
 function App() {
@@ -14,7 +15,8 @@ function App() {
   const [activeScriptId, setActiveScriptId] = useState<string>('1');
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [activeTab, setActiveTab] = useState<'structure' | 'timeline' | 'characters'>('structure');
+  const [scriptResult, setScriptResult] = useState<FullScriptResult | null>(null);
+  const [activeTab, setActiveTab] = useState<'structure' | 'timeline' | 'characters' | 'script'>('structure');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>('');
   const [showApiKeyInput, setShowApiKeyInput] = useState<boolean>(false);
@@ -143,6 +145,46 @@ function App() {
       setStatus(AnalysisStatus.ERROR);
       const errorMessage = error instanceof Error ? error.message : "분석 중 오류가 발생했습니다.";
       setErrorMsg(errorMessage.includes('API') ? "API 키가 올바르지 않습니다. 다시 확인해주세요." : "분석 중 오류가 발생했습니다. 다시 시도해주세요.");
+    }
+  };
+
+  const handleGenerateScript = async () => {
+    if (!apiKey.trim()) {
+      setShowApiKeyInput(true);
+      setErrorMsg("API 키를 먼저 입력해주세요.");
+      return;
+    }
+
+    const filledScripts = scripts.filter(s => s.content.trim());
+    if (filledScripts.length === 0) {
+      setErrorMsg("최소 1개 이상의 대본을 입력해주세요.");
+      return;
+    }
+
+    const totalLength = filledScripts.reduce((sum, s) => sum + s.content.length, 0);
+    if (totalLength < 50) {
+      setErrorMsg("대본이 너무 짧습니다. 더 자세한 내용을 입력해주세요.");
+      return;
+    }
+
+    setStatus(AnalysisStatus.ANALYZING);
+    setErrorMsg(null);
+    setScriptResult(null);
+
+    try {
+      const combinedScript = filledScripts.map((s, idx) => 
+        `[자료 ${idx + 1}: ${s.title}]\n${s.content}`
+      ).join('\n\n---\n\n');
+
+      const data = await generateFullScript(combinedScript, apiKey);
+      setScriptResult(data);
+      setStatus(AnalysisStatus.SUCCESS);
+      setActiveTab('script');
+    } catch (error) {
+      console.error(error);
+      setStatus(AnalysisStatus.ERROR);
+      const errorMessage = error instanceof Error ? error.message : "대본 생성 중 오류가 발생했습니다.";
+      setErrorMsg(errorMessage.includes('API') ? "API 키가 올바르지 않습니다. 다시 확인해주세요." : "대본 생성 중 오류가 발생했습니다. 다시 시도해주세요.");
     }
   };
 
@@ -338,98 +380,144 @@ function App() {
                 </div>
             )}
 
-            <button
-              onClick={handleAnalyze}
-              disabled={status === AnalysisStatus.ANALYZING}
-              className={`
-                w-full py-4 rounded-xl font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.01]
-                ${status === AnalysisStatus.ANALYZING 
-                  ? 'bg-slate-700 text-slate-400 cursor-wait' 
-                  : 'bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white shadow-brand-900/50'}
-              `}
-            >
-              {status === AnalysisStatus.ANALYZING ? (
-                <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  팩트 추출 및 분석 중...
-                </>
-              ) : (
-                <>
-                  <SparklesIcon className="w-5 h-5" />
-                  {scripts.filter(s => s.content).length > 1 ? '팩트 추출 & 떡상 구조 생성' : '대본 분석 및 떡상 구조 생성'}
-                </>
-              )}
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handleAnalyze}
+                disabled={status === AnalysisStatus.ANALYZING}
+                className={`
+                  py-4 rounded-xl font-bold text-base shadow-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.01]
+                  ${status === AnalysisStatus.ANALYZING 
+                    ? 'bg-slate-700 text-slate-400 cursor-wait' 
+                    : 'bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white shadow-brand-900/50'}
+                `}
+              >
+                {status === AnalysisStatus.ANALYZING ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    분석 중...
+                  </>
+                ) : (
+                  <>
+                    <SparklesIcon className="w-5 h-5" />
+                    구조 분석
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleGenerateScript}
+                disabled={status === AnalysisStatus.ANALYZING}
+                className={`
+                  py-4 rounded-xl font-bold text-base shadow-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.01]
+                  ${status === AnalysisStatus.ANALYZING 
+                    ? 'bg-slate-700 text-slate-400 cursor-wait' 
+                    : 'bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white shadow-purple-900/50'}
+                `}
+              >
+                {status === AnalysisStatus.ANALYZING ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    생성 중...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    대본 생성
+                  </>
+                )}
+              </button>
+            </div>
             
             <p className="text-center text-slate-500 text-xs">
               {scripts.filter(s => s.content).length > 1 
-                ? `${scripts.filter(s => s.content).length}개의 자료에서 핵심 팩트를 추출하여 최적의 구조를 제안합니다.`
-                : 'Gemini 2.5 AI가 문맥을 파악하여 최적의 타임라인과 후킹을 제안합니다.'}
+                ? `${scripts.filter(s => s.content).length}개의 자료에서 핵심 팩트를 추출합니다.`
+                : '구조 분석은 빠른 분석을, 대본 생성은 완성된 스크립트를 제공합니다.'}
             </p>
           </div>
 
           {/* Right Column: Output */}
           <div className="lg:col-span-7 flex flex-col h-full">
-            {status === AnalysisStatus.SUCCESS && result ? (
+            {status === AnalysisStatus.SUCCESS && (result || scriptResult) ? (
               <div className="space-y-6 animate-fade-in">
-                {/* Score Card */}
-                <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-xl">
-                  <div>
-                    <h2 className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">예상 바이럴 점수</h2>
-                    <div className="flex items-baseline gap-2">
-                        <span className={`text-4xl font-black ${scoreColor(result.viralScore)}`}>{result.viralScore}</span>
-                        <span className="text-slate-500">/ 100</span>
+                {/* Score Card - Only show for analysis result */}
+                {result && (
+                  <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-xl">
+                    <div>
+                      <h2 className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">예상 바이럴 점수</h2>
+                      <div className="flex items-baseline gap-2">
+                          <span className={`text-4xl font-black ${scoreColor(result.viralScore)}`}>{result.viralScore}</span>
+                          <span className="text-slate-500">/ 100</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 border-l border-slate-700 pl-0 sm:pl-6">
+                      <h3 className="text-slate-300 font-semibold mb-2 text-sm">💡 AI의 조언</h3>
+                      <ul className="text-sm text-slate-400 space-y-1">
+                          {result.tips.slice(0, 2).map((tip, idx) => (
+                              <li key={idx}>• {tip}</li>
+                          ))}
+                      </ul>
                     </div>
                   </div>
-                  <div className="flex-1 border-l border-slate-700 pl-0 sm:pl-6">
-                    <h3 className="text-slate-300 font-semibold mb-2 text-sm">💡 AI의 조언</h3>
-                    <ul className="text-sm text-slate-400 space-y-1">
-                        {result.tips.slice(0, 2).map((tip, idx) => (
-                            <li key={idx}>• {tip}</li>
-                        ))}
-                    </ul>
-                  </div>
-                </div>
+                )}
 
                 {/* Main Content Area */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl min-h-[600px]">
-                    <div className="flex border-b border-slate-800">
-                        <button 
-                            onClick={() => setActiveTab('structure')}
-                            className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors ${activeTab === 'structure' ? 'bg-brand-900/20 text-brand-400 border-b-2 border-brand-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
-                        >
-                            구조 & 후킹
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab('timeline')}
-                            className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors ${activeTab === 'timeline' ? 'bg-brand-900/20 text-brand-400 border-b-2 border-brand-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
-                        >
-                            사건 타임라인
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab('characters')}
-                            className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors ${activeTab === 'characters' ? 'bg-brand-900/20 text-brand-400 border-b-2 border-brand-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
-                        >
-                            주요 인물
-                        </button>
+                    <div className="flex border-b border-slate-800 overflow-x-auto">
+                        {result && (
+                          <>
+                            <button 
+                                onClick={() => setActiveTab('structure')}
+                                className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors whitespace-nowrap ${activeTab === 'structure' ? 'bg-brand-900/20 text-brand-400 border-b-2 border-brand-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
+                            >
+                                구조 & 후킹
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('timeline')}
+                                className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors whitespace-nowrap ${activeTab === 'timeline' ? 'bg-brand-900/20 text-brand-400 border-b-2 border-brand-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
+                            >
+                                사건 타임라인
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('characters')}
+                                className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors whitespace-nowrap ${activeTab === 'characters' ? 'bg-brand-900/20 text-brand-400 border-b-2 border-brand-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
+                            >
+                                주요 인물
+                            </button>
+                          </>
+                        )}
+                        {scriptResult && (
+                          <button 
+                              onClick={() => setActiveTab('script')}
+                              className={`flex-1 py-4 text-sm font-bold tracking-wide transition-colors whitespace-nowrap ${activeTab === 'script' ? 'bg-purple-900/20 text-purple-400 border-b-2 border-purple-500' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
+                          >
+                              완성 대본
+                          </button>
+                        )}
                     </div>
 
                     <div className="p-6 overflow-y-auto max-h-[calc(100vh-20rem)] scrollbar-thin scrollbar-thumb-slate-700">
-                        {activeTab === 'structure' ? (
+                        {activeTab === 'structure' && result ? (
                             <div className="space-y-10">
                                 <HookView hooks={result.hooks} />
                                 <div className="border-t border-slate-800 pt-8">
                                     <StructureView structure={result.scriptStructure} />
                                 </div>
                             </div>
-                        ) : activeTab === 'timeline' ? (
+                        ) : activeTab === 'timeline' && result ? (
                             <TimelineView events={result.timeline} />
-                        ) : (
+                        ) : activeTab === 'characters' && result ? (
                             <CharacterView characters={result.characters} />
-                        )}
+                        ) : activeTab === 'script' && scriptResult ? (
+                            <ScriptView scriptResult={scriptResult} />
+                        ) : null}
                     </div>
                 </div>
               </div>
@@ -446,10 +534,10 @@ function App() {
                 </p>
                 <div className="mt-8 grid grid-cols-3 gap-4 w-full max-w-md">
                     <div className="bg-slate-800/50 p-3 rounded text-xs text-slate-400">
-                        ✨ <b>Hook</b><br/>첫 5초 이탈 방지
+                        ✨ <b>구조 분석</b><br/>빠른 분석
                     </div>
                     <div className="bg-slate-800/50 p-3 rounded text-xs text-slate-400">
-                        ⏳ <b>Timeline</b><br/>복잡한 사건 정리
+                        📝 <b>대본 생성</b><br/>완성된 스크립트
                     </div>
                     <div className="bg-slate-800/50 p-3 rounded text-xs text-slate-400">
                         📄 <b>다중 자료</b><br/>팩트만 추출
