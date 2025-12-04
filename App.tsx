@@ -73,49 +73,25 @@ function App() {
   };
 
   const handleFileUpload = async (id: string, file: File) => {
-    if (!file.name.endsWith('.txt') && !file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
-      setErrorMsg("txt 또는 docx 파일만 업로드 가능합니다.");
+    if (!file.name.endsWith('.txt')) {
+      setErrorMsg("txt 파일만 업로드 가능합니다.");
       return;
     }
 
     try {
       let content = '';
       
-      if (file.name.endsWith('.txt')) {
-        // Read text file with proper encoding support
-        const reader = new FileReader();
-        content = await new Promise<string>((resolve, reject) => {
-          reader.onload = (e) => {
-            const text = e.target?.result as string;
-            resolve(text || '');
-          };
-          reader.onerror = () => reject(new Error('파일 읽기 실패'));
-          // Use UTF-8 encoding for proper Korean character support
-          reader.readAsText(file, 'UTF-8');
-        });
-      } else if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
-        // For docx files, read as binary and extract text
-        // Note: This is a simplified version - only extracts plain text
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        const decoder = new TextDecoder('utf-8');
-        
-        // Try to extract readable text from the binary
-        // This is a basic approach - for production use mammoth.js or similar
-        let rawText = decoder.decode(uint8Array);
-        
-        // Filter out non-printable characters and keep Korean, English, numbers, and common punctuation
-        content = rawText
-          .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove control characters
-          .replace(/[^\p{L}\p{N}\p{P}\p{Z}\s]/gu, '') // Keep letters, numbers, punctuation, separators
-          .replace(/\s+/g, ' ') // Normalize whitespace
-          .trim();
-        
-        if (!content || content.length < 10) {
-          setErrorMsg("docx 파일의 내용을 읽을 수 없습니다. txt 파일로 변환하여 업로드해주세요.");
-          return;
-        }
-      }
+      // Read text file with proper encoding support
+      const reader = new FileReader();
+      content = await new Promise<string>((resolve, reject) => {
+        reader.onload = (e) => {
+          const text = e.target?.result as string;
+          resolve(text || '');
+        };
+        reader.onerror = () => reject(new Error('파일 읽기 실패'));
+        // Use UTF-8 encoding for proper Korean character support
+        reader.readAsText(file, 'UTF-8');
+      });
 
       setScripts(scripts.map(s => 
         s.id === id 
@@ -317,7 +293,7 @@ function App() {
                 파일
                 <input
                   type="file"
-                  accept=".txt,.docx,.doc"
+                  accept=".txt"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleFileUpload(activeScript.id, file);
@@ -326,6 +302,22 @@ function App() {
                   className="hidden"
                 />
               </label>
+              {activeScript.content && (
+                <button
+                  onClick={() => {
+                    if (confirm('현재 대본 내용을 모두 지우시겠습니까?')) {
+                      updateScriptContent(activeScript.id, '');
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-900/20 hover:bg-red-900/30 border border-red-800 rounded-lg text-sm font-medium text-red-400 transition-colors flex items-center gap-2"
+                  title="내용 초기화"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  초기화
+                </button>
+              )}
             </div>
 
             {/* Script Content */}
